@@ -3,6 +3,7 @@
 #
 #   install-git-hooks.sh <dir>           install or update them
 #   install-git-hooks.sh <dir> --check   only report: missing | current <v> | outdated <v> | blocked <why>
+#                                        (<v> is the version written in the installed copy)
 #
 # The hooks go in the repository's common git dir, so every worktree shares them, and
 # they are never committed. They are copies, not links to the plugin: the installed
@@ -29,7 +30,12 @@ if path=$(git -C "$dir" config --get core.hooksPath); then
   exit 3
 fi
 
+# The content decides, not the version: a plugin update that doesn't touch the hooks
+# leaves them current. The marker line, which carries the version, is left out.
+same() { diff -q <(grep -v "^$marker" "$1") <(grep -v "^$marker" "$2") >/dev/null 2>&1; }
+
 state=current
+installed=
 for name in pre-commit pre-push; do
   target="$hooks/$name"
   if [ ! -e "$target" ]; then
@@ -37,13 +43,18 @@ for name in pre-commit pre-push; do
   elif ! grep -q "^$marker" "$target"; then
     echo "blocked $name already exists and was not installed by this plugin"
     exit 3
-  elif ! grep -q "^$marker $version\$" "$target"; then
-    [ "$state" = current ] && state="outdated $(grep "^$marker" "$target" | head -1 | cut -d' ' -f3)"
+  else
+    installed=$(grep "^$marker" "$target" | head -1 | cut -d' ' -f3)
+    [ "$state" = current ] && ! same "$target" "$here/git/$name" && state=outdated
   fi
 done
+if [ "$state" = current ] && ! cmp -s "$hooks/android-workflow-lib.sh" "$here/lib.sh"; then
+  [ -e "$hooks/android-workflow-lib.sh" ] && state=outdated || state=missing
+fi
+[ "$state" = outdated ] && state="outdated $installed"
 
 if [ "$mode" = --check ]; then
-  if [ "$state" = current ]; then echo "current $version"; else echo "$state"; fi
+  if [ "$state" = current ]; then echo "current ${installed:-$version}"; else echo "$state"; fi
   exit 0
 fi
 

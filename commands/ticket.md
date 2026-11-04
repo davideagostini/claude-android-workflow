@@ -111,23 +111,39 @@ and why.
 
 No `runTarget`, or no UI change → skip and say so.
 
+If the `android-cli` skill is available, load it and follow it for the journey: its
+interaction rules (focus before typing, slow scrolls, wait and `layout` again), its
+journey format (`<journey>` with one `<action>` per step) and its summary, one ✅ or ❌
+per action. `android layout` is the main way to check a screen; a screenshot comes second.
+Without the skill, the steps below are enough.
+
 Several tasks may run at once, and there may be several devices. Each device has its own
 lock, shared by every project on this machine:
 
 1. `bash "${CLAUDE_PLUGIN_ROOT}/hooks/device-lock.sh" pick` locks a free, ready device
    and prints its serial: a physical device first, then an emulator. It fails when no
    device is connected or every one is busy, and says who holds each lock.
-   - Nothing free → tell the user who holds what and ask. You may suggest starting
-     another emulator from `emulator -list-avds`, but start it only on a yes.
    - A lock reported as "maybe abandoned" is not removed on its own: ask the user.
+   - Nothing free → tell the user who holds what, and suggest an emulator from
+     `android emulator list`. Start it only on a yes, with
+     `android emulator start --headless <avd>`: it returns when the emulator is ready and
+     leaves it detached from this session. **Never** run `emulator -avd ...` in the
+     background: the session would wait for it and never end. Then `pick` again.
+   - An emulator that fails (for example "not enough space" when installing) → say so
+     and suggest another one. Never wipe an emulator's data.
 2. Use that serial for every command of the journey: `android run --device=<serial>
-   "<runTarget>"`, `android layout --device=<serial>`, `android screen capture
-   --device=<serial>`, `android input --device=<serial>`, and `ANDROID_SERIAL=<serial>`
-   for `adb`.
-3. Start from a known state (`adb shell pm clear` or an explicit logout) and record
+   "<runTarget>"`, `android layout --device=<serial>`, `android input --device=<serial>`,
+   and `ANDROID_SERIAL=<serial>` for `adb`.
+3. Screenshots: `bash "${CLAUDE_PLUGIN_ROOT}/hooks/screenshot.sh" <serial> <file.png>`, not
+   `android screen capture` directly. On an emulator with two displays that command writes
+   a warning instead of a PNG; the script checks the file and falls back to
+   `adb screencap` on the right display.
+4. Start from a known state (`adb shell pm clear` or an explicit logout) and record
    pass/fail per step.
-4. Always release the lock at the end, also when the journey fails:
+5. Always release the lock at the end, also when the journey fails:
    `bash "${CLAUDE_PLUGIN_ROOT}/hooks/device-lock.sh" release <serial>`.
+6. If you started an emulator, say so in the report and ask whether to stop it
+   (`android emulator stop <avd>`). Don't stop it on your own: another task may use it.
 
 ### 9. Report and ask for the commit
 
