@@ -35,6 +35,22 @@ Inside a session, `/plugin marketplace add davideagostini/claude-android-workflo
 The plugin is active **in every project**, but in a project that is not set up (step 2)
 the hooks do nothing except the default-branch guard.
 
+### Update
+
+If the plugin is already installed, fetch the new catalog, then update:
+
+```bash
+claude plugin marketplace update davideagostini
+claude plugin update android-workflow@davideagostini
+claude plugin list          # shows the new version
+```
+
+The update applies to sessions started after it: restart the open ones.
+
+The git hooks in each project are copies, so they don't change with the plugin. The next
+`/android-workflow:ticket` in a project notices an outdated copy and offers to update it;
+`/android-workflow:setup` does the same.
+
 ## 2. Set up a project (once per project)
 
 1. Open a terminal in the project folder, on an up-to-date default branch.
@@ -150,7 +166,7 @@ worktree, never committed), with the plugin version inside. After a plugin updat
 | Turn it off in one project | `claude plugin disable android-workflow@davideagostini --scope local` (in the project folder) |
 | Turn it off everywhere | `claude plugin disable android-workflow@davideagostini` |
 | See what it contains | `claude plugin details android-workflow` |
-| Update it | `claude plugin update android-workflow@davideagostini` |
+| Update it | See [Update](#update) |
 | Remove it | `claude plugin uninstall android-workflow@davideagostini` |
 
 ## Known issues
