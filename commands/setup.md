@@ -87,7 +87,33 @@ If the project already tracks `.worktreeinclude` or ignores `.claude/worktrees/`
 `.worktreeinclude` is read from the main checkout's working tree, so it works even when
 it is untracked: the copy is local and nothing is committed.
 
-## 5. CLAUDE.md
+## 5. Git hooks and GitHub protection
+
+The guard hook reads the text of Claude's commands, so `!` commands, aliases or
+`sh -c` slip through. The git hooks block at the git level, whoever runs the command.
+
+- `bash "${CLAUDE_PLUGIN_ROOT}/hooks/install-git-hooks.sh" . --check` reports one of:
+  - `missing` → propose installing `pre-commit` and `pre-push`. They block commits on the
+    default branch and pushes that update it. They go in the common git dir, so every
+    worktree shares them, and they are never committed. They block the user's own
+    commits on the default branch too; `--no-verify` skips them on purpose.
+  - `outdated <version>` → propose updating them.
+  - `current <version>` → nothing to do.
+  - `blocked ...` → say why (another hook already there, or `core.hooksPath` set by
+    husky or lefthook) and install nothing. Never overwrite a hook.
+- On a yes: `bash "${CLAUDE_PLUGIN_ROOT}/hooks/install-git-hooks.sh" .`
+
+Then check the protection of the default branch on GitHub:
+`gh api repos/{owner}/{repo}/branches/<default>/protection`.
+
+- 404 → say that the default branch is not protected on GitHub: that is the real
+  barrier, the hooks only catch mistakes on this machine. Suggest enabling it; don't
+  change GitHub settings yourself.
+- 403 (for example a private repo on a free plan) → say that protection can't be checked
+  or isn't available, and go on.
+- Not a GitHub remote → skip and say so.
+
+## 6. CLAUDE.md
 
 If the project has a CLAUDE.md, propose one line in its workflow section (or at the end):
 
@@ -96,13 +122,14 @@ If the project has a CLAUDE.md, propose one line in its workflow section (or at 
 
 CLAUDE.md is usually tracked: say so, and add the line only if the user agrees.
 
-## 6. Check
+## 7. Check
 
 - `git check-ignore -v .claude/worktrees/x .claude/android-workflow.json` → both ignored.
 - `git symbolic-ref refs/remotes/origin/HEAD`, or `defaultBranch` → the default branch is known.
+- `install-git-hooks.sh . --check` → `current`, or the reason it is `blocked`.
 - `./gradlew <compileTask>` → report the result.
 - Tell the user how to start: `claude -w <name>`, then `/android-workflow:ticket ...`.
 
-## 7. Report
+## 8. Report
 
 What was written, what was left alone and why, what is committed (normally nothing).

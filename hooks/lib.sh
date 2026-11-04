@@ -19,3 +19,16 @@ aw_config() {
   fi
   return 1
 }
+
+# aw_default_branches <dir>: prints the protected branch names for the repository that
+# holds <dir>, space separated: origin/HEAD, else "defaultBranch" in the project data,
+# else both main and master. No network calls: this runs before every command.
+aw_default_branches() {
+  local branch config
+  branch=$(git -C "$1" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
+  branch="${branch#origin/}"
+  if [ -z "$branch" ] && config=$(aw_config "$1"); then
+    branch=$(jq -r '.defaultBranch // empty' "$config" 2>/dev/null)
+  fi
+  echo "${branch:-main master}"
+}

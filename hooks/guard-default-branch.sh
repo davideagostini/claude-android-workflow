@@ -43,16 +43,17 @@ if [[ "$cmd" =~ $gitc_re ]]; then
   git -C "$cand" rev-parse --git-dir >/dev/null 2>&1 && dir="$cand"
 fi
 
-# The default branch: origin/HEAD, else "defaultBranch" in the project data, else
-# both main and master are protected. No network calls here.
-protected=$(git -C "$dir" symbolic-ref --short refs/remotes/origin/HEAD 2>/dev/null)
-protected="${protected#origin/}"
-if [ -z "$protected" ] && config=$(aw_config "$dir"); then
-  protected=$(jq -r '.defaultBranch // empty' "$config" 2>/dev/null)
-fi
-protected="${protected:-main master}"
+protected=$(aw_default_branches "$dir")
 
 current=$(git -C "$dir" branch --show-current 2>/dev/null)
+
+# Skipping git's own hooks would skip the plugin's pre-commit and pre-push hooks.
+# The user can still do it on purpose, from their own shell.
+if printf '%s' "$cmd" | grep -Eq "${git_re}(commit|push)([[:space:]][^;&|]*)?[[:space:]]--no-verify([[:space:]]|$)" \
+  || printf '%s' "$cmd" | grep -Eq "${git_re}commit([[:space:]][^;&|]*)?[[:space:]]-[a-zA-Z]*n[a-zA-Z]*([[:space:]]|$)"; then
+  echo "Blocked: --no-verify skips the git hooks. If it is really needed, ask the user to run the command." >&2
+  exit 2
+fi
 
 for branch in $protected; do
   if [ "$current" = "$branch" ]; then

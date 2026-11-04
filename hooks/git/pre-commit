@@ -1,0 +1,14 @@
+#!/bin/bash
+# android-workflow-hook @VERSION@
+# Installed by /android-workflow:setup. A copy: re-run setup to update it.
+# Blocks commits on the default branch. On purpose: git commit --no-verify.
+. "$(dirname "$0")/android-workflow-lib.sh" || exit 0
+
+current=$(git branch --show-current 2>/dev/null)
+for branch in $(aw_default_branches .); do
+  if [ "$current" = "$branch" ]; then
+    echo "android-workflow: commit blocked, '$branch' is the default branch. Create a branch first, or use --no-verify on purpose." >&2
+    exit 1
+  fi
+done
+exit 0
