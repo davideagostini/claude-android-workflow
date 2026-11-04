@@ -97,6 +97,8 @@ check "cd repo-on-main; from feature" 2 "$(guard "$tmp/onfeature" "cd $tmp/onmai
 check "cd relative && from main" 0 "$(guard "$tmp/onmain" "cd ../onfeature && git $C -m x")"
 check "cd not a repo, falls back to cwd" 2 "$(guard "$tmp/onmain" "cd $tmp && git $C -m x")"
 check "cd quoted path" 0 "$(guard "$tmp/onmain" "cd '$tmp/onfeature' && git $C -m x")"
+check "cd ~/path (tilde) from main" 0 "$(HOME="$tmp" guard "$tmp/onmain" "cd ~/onfeature && git $C -m x")"
+check "-C ~/repo-on-main from feature" 2 "$(HOME="$tmp" guard "$tmp/onfeature" "git -C ~/onmain $C -m x")"
 
 # --- verify-build: when Gradle runs, the loop guard ----------------------------------
 stop() { hook verify-build.sh "$1" "" "${2:-false}"; }
