@@ -1,0 +1,12 @@
+{
+  "$schema": "https://anthropic.com/claude-code/plugin.schema.json",
+  "name": "android-workflow",
+  "version": "0.2.0",
+  "description": "One worktree per task, /ticket from plan to PR, build check on Stop, default-branch guard. For Android projects.",
+  "author": {
+    "name": "Davide Agostini"
+  },
+  "homepage": "https://github.com/davideagostini/claude-android-workflow",
+  "repository": "https://github.com/davideagostini/claude-android-workflow",
+  "license": "MIT"
+}

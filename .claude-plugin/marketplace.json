@@ -1,0 +1,14 @@
+{
+  "name": "davideagostini",
+  "description": "Claude Code plugins by Davide Agostini",
+  "owner": {
+    "name": "Davide Agostini"
+  },
+  "plugins": [
+    {
+      "name": "android-workflow",
+      "source": "./",
+      "description": "One worktree per task, /ticket from plan to PR, build check on Stop, default-branch guard. For Android projects."
+    }
+  ]
+}
