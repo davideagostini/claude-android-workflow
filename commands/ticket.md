@@ -98,6 +98,9 @@ command (`./gradlew <task> <task> ...`, with `--continue` so that one failure do
 hide the others), plus anything the project's CLAUDE.md adds to its definition of done.
 Keep the output for the report.
 
+Time both commands yourself (`start=$(date +%s)` before, `$(($(date +%s) - start))`
+after) and keep the seconds for the report: "Verify: compile 42 s, tests and checks 95 s".
+
 ### 7. Review
 
 Run the `code-review` skill on the diff against `origin/<default>`. Fix the findings that
@@ -129,12 +132,12 @@ lock, shared by every project on this machine:
 ### 9. Report and ask for the commit
 
 Report: what changed, the output of step 6, the review findings, the journey result and
-the device it ran on, the build checks of this worktree, what was not done.
+the device it ran on, the timing below, what was not done.
 
-Build checks: the Stop hook writes one line per compile to
-`$(git rev-parse --git-dir)/android-workflow-builds.log` (date, task, seconds, result).
-Report how many ran, the median and the longest duration. No file → say that no build
-check ran.
+Timing: the Verify durations from step 6, then the Stop hook's build checks on this
+branch, from `bash "${CLAUDE_PLUGIN_ROOT}/hooks/build-stats.sh" . --branch <branch>`.
+Quote its line as it is, and add that the check at the end of this reply is not counted
+yet: the Stop hook runs after the reply.
 
 Then ask once: **"Commit, push e PR?"** (in the user's language).
 
