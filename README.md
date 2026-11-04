@@ -148,7 +148,7 @@ other, then the sessions run in parallel.
 | Claude finishes a reply and has touched `.kt`, `.java`, `.xml` or build files (`.kts`, `.gradle`, `.toml`, `gradle.properties`) | It compiles `compileTask`. If there are errors, Claude must fix them before stopping. If it can't, on the second attempt with no new edits it is allowed to stop (no endless loop). Code that already compiled is not compiled again. |
 | Claude tries `git commit` or `git push` on the default branch, or `--no-verify` | Blocked. The default branch is `origin/HEAD`; if missing, `defaultBranch` in the project data; if that is missing too, both `main` and `master`. It applies to the repository the command acts on (`git -C <dir>`, `cd <dir> && ...`), not only to the session's folder. |
 | Anyone commits on the default branch, or pushes to it (git hooks, if installed) | Blocked by git, whoever runs the command: Claude, a `!` command, you. `--no-verify` skips it on purpose. |
-| A build check runs | One line in `.git/android-workflow-builds.log` of the worktree (date, task, seconds, result). `/ticket` reports how many ran, the median and the longest. |
+| A build check runs | One line in `.git/android-workflow-builds.log` of the project (date, branch, task, seconds, result), shared by every worktree, so it survives "remove". `/ticket` reports the branch's checks and times its own Verify step; `/android-workflow:build-stats` shows the numbers any time. |
 | A PR is opened by `/ticket` | It waits for the project's CI (`gh pr checks`, up to 20 minutes) and reports each check. |
 
 The Claude Code guard reads the command text, it doesn't parse the shell: it covers the
@@ -166,6 +166,7 @@ worktree, never committed), with the plugin version inside. After a plugin updat
 | Turn it off in one project | `claude plugin disable android-workflow@davideagostini --scope local` (in the project folder) |
 | Turn it off everywhere | `claude plugin disable android-workflow@davideagostini` |
 | See what it contains | `claude plugin details android-workflow` |
+| See how long the build checks take | `/android-workflow:build-stats`, in the project |
 | Update it | See [Update](#update) |
 | Remove it | `claude plugin uninstall android-workflow@davideagostini` |
 
@@ -209,6 +210,7 @@ After every change:
 .claude-plugin/marketplace.json   this repository as a one-plugin marketplace
 commands/ticket.md                /android-workflow:ticket
 commands/setup.md                 /android-workflow:setup
+commands/build-stats.md           /android-workflow:build-stats
 hooks/hooks.json                  wires the two hooks
 hooks/verify-build.sh             build check at the end of a reply (Stop)
 hooks/guard-default-branch.sh     blocks commit/push on the default branch (PreToolUse)
@@ -216,6 +218,7 @@ hooks/lib.sh                      shared by the hooks (also copied next to the g
 hooks/git/pre-commit, pre-push    git hooks, installed as copies by setup
 hooks/install-git-hooks.sh        installs, updates or checks the git hooks
 hooks/device-lock.sh              one lock per device: pick, acquire, release, status
+hooks/build-stats.sh              count, median and longest build check, from the log
 tests/run.sh                      tests of all the scripts
 evals/                            evals of /android-workflow:ticket
 .github/workflows/test.yml        CI: tests on Linux and macOS, shellcheck

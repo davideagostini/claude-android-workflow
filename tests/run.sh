@@ -150,10 +150,10 @@ check "fixed: exit 0" 0 "$(stop "$p" true)"
 check "  ...Gradle ran 3 times" 3 "$(runs)"
 check "same changes as last success: no Gradle" 0 "$(stop "$p")"
 check "  ...still 3" 3 "$(runs)"
-buildlog="$(g -C "$p" rev-parse --path-format=absolute --git-dir)/android-workflow-builds.log"
+buildlog="$(g -C "$p" rev-parse --path-format=absolute --git-common-dir)/android-workflow-builds.log"
 check "build log: one line per build" 8 "$(wc -l < "$buildlog" | tr -d ' ')"
-check "build log: task and result" ":app:compileDebugKotlin ok" "$(tail -1 "$buildlog" | cut -f2,4 | tr '\t' ' ')"
-check "build log: seconds are a number" yes "$(tail -1 "$buildlog" | cut -f3 | grep -Eq '^[0-9]+$' && echo yes)"
+check "build log: branch, task and result" "feature :app:compileDebugKotlin ok" "$(tail -1 "$buildlog" | cut -f2,3,5 | tr '\t' ' ')"
+check "build log: seconds are a number" yes "$(tail -1 "$buildlog" | cut -f4 | grep -Eq '^[0-9]+$' && echo yes)"
 
 echo '{"compileTask": ":app:compileDebugKotlin", "verifyBuildHook": false}' > "$p/.claude/android-workflow.json"
 echo "BROKEN" > "$p/src/A.kt"
@@ -167,6 +167,23 @@ g -C "$p" commit -q -m base
 g -C "$p" worktree add -q -b wt "$tmp/wt"
 echo "BROKEN" > "$tmp/wt/src/B.kt"
 check "worktree reads project data from main checkout" 2 "$(stop "$tmp/wt")"
+check "worktree logs into the project's common log, with its branch" wt "$(tail -1 "$buildlog" | cut -f2)"
+rm -rf "$tmp/wt" && g -C "$p" worktree prune
+check "log survives the worktree's removal" wt "$(tail -1 "$buildlog" | cut -f2)"
+
+# --- build stats --------------------------------------------------------------------
+stats() { bash "$hooks/build-stats.sh" "$@" 2>&1; }
+sp="$tmp/stats"
+repo "$sp" feature
+check "stats: no log" "branch feature: no build checks" "$(stats "$sp")"
+slog="$(g -C "$sp" rev-parse --path-format=absolute --git-common-dir)/android-workflow-builds.log"
+printf 'd\tfeature\t:t\t%s\t%s\n' 10 ok 30 fail 20 ok > "$slog"
+printf 'd\tother\t:t\t%s\t%s\n' 100 ok 1 ok >> "$slog"
+check "stats: current branch, odd count" "branch feature: 3 build checks, 1 failed, median 20 s, longest 30 s" "$(stats "$sp")"
+check "stats: --branch, even count" "branch other: 2 build checks, 0 failed, median 50.5 s, longest 100 s" "$(stats "$sp" --branch other)"
+check "stats: --all" "all branches: 5 build checks, 1 failed, median 20 s, longest 100 s" "$(stats "$sp" --all)"
+check "stats: unknown branch" "branch nope: no build checks" "$(stats "$sp" --branch nope)"
+check "stats: sorts numbers, not text" "branch big: 2 build checks, 0 failed, median 54.5 s, longest 100 s" "$(printf 'd\tbig\t:t\t9\tok\nd\tbig\t:t\t100\tok\n' >> "$slog"; stats "$sp" --branch big)"
 
 # --- git hooks and their installer -------------------------------------------------
 install() { bash "$hooks/install-git-hooks.sh" "$@" 2>&1; }

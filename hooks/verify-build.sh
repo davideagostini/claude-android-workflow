@@ -9,8 +9,9 @@
 # - Fails again with no new edits since the last failure: lets Claude stop,
 #   so a failure it cannot fix never loops.
 #
-# State and the build log (android-workflow-builds.log) live in the worktree's own git
-# dir: every worktree has its own.
+# The state lives in the worktree's own git dir: every worktree has its own. The build
+# log (android-workflow-builds.log) lives in the common git dir: one per project, shared
+# by every worktree, so it survives "remove". hooks/build-stats.sh reads it.
 
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -52,9 +53,11 @@ fi
 start=$(date +%s)
 log=$(./gradlew "$task" --console=plain -q 2>&1)
 result=$?
-# One line per build, for the /ticket report: date, task, seconds, result.
-printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$task" "$(($(date +%s) - start))" \
-  "$([ $result -eq 0 ] && echo ok || echo fail)" >> "$(git rev-parse --git-dir)/android-workflow-builds.log"
+# One line per build: date, branch, task, seconds, result.
+branch=$(git branch --show-current)
+printf '%s\t%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "${branch:-detached}" "$task" \
+  "$(($(date +%s) - start))" "$([ $result -eq 0 ] && echo ok || echo fail)" \
+  >> "$(git rev-parse --path-format=absolute --git-common-dir)/android-workflow-builds.log"
 if [ $result -eq 0 ]; then
   echo "ok:$fingerprint" > "$state"
   exit 0
