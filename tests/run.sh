@@ -226,10 +226,17 @@ check "pre-commit: master allowed once origin/HEAD is develop" 0 $?
 
 # Outdated copy, foreign hook, core.hooksPath.
 hookdir="$(g -C "$h" rev-parse --path-format=absolute --git-common-dir)/hooks"
-sed -i.bak "s/^# android-workflow-hook .*/# android-workflow-hook 0.0.1/" "$hookdir/pre-push" && rm "$hookdir/pre-push.bak"
-check "installer --check: outdated" "outdated 0.0.1" "$(install "$h" --check)"
+sed -i.bak "s/^# android-workflow-hook .*/# android-workflow-hook 0.0.1/" "$hookdir/pre-commit" "$hookdir/pre-push" && rm "$hookdir"/*.bak
+check "installer --check: other version, same content → current" "current 0.0.1" "$(install "$h" --check)"
+echo "# changed" >> "$hookdir/pre-push"
+check "installer --check: hook content changed → outdated" "outdated 0.0.1" "$(install "$h" --check)"
 install "$h" >/dev/null
 check "installer: update" "current $version" "$(install "$h" --check)"
+echo "# changed" >> "$hookdir/android-workflow-lib.sh"
+check "installer --check: lib.sh changed → outdated" "outdated $version" "$(install "$h" --check)"
+rm "$hookdir/android-workflow-lib.sh"
+check "installer --check: lib.sh missing → missing" missing "$(install "$h" --check)"
+install "$h" >/dev/null
 
 f="$tmp/foreign"
 repo "$f" feature
@@ -276,16 +283,55 @@ lock h3 release emulator-5556 --force
 check "lock: --force release" 0 $?
 lock h2 release emulator-5554
 
-printf 'emulator-5554\tdevice\n37221FDJH00ABJ\tdevice\nemulator-5556\toffline\n' > "$tmp/devices"
-check "pick: physical device first" 37221FDJH00ABJ "$(lock p1 pick)"
+printf 'emulator-5554\tdevice\n0A1B2C3D4E5F\tdevice\nemulator-5556\toffline\n' > "$tmp/devices"
+check "pick: physical device first" 0A1B2C3D4E5F "$(lock p1 pick)"
 check "pick: then a free emulator" emulator-5554 "$(lock p2 pick)"
 lock p3 pick >/dev/null
 check "pick: all busy (offline ignored)" 1 $?
-lock p1 release 37221FDJH00ABJ
-check "pick: freed device picked again" 37221FDJH00ABJ "$(lock p3 pick)"
+lock p1 release 0A1B2C3D4E5F
+check "pick: freed device picked again" 0A1B2C3D4E5F "$(lock p3 pick)"
 : > "$tmp/devices"
 lock p4 pick >/dev/null
 check "pick: no device connected" 1 $?
+
+# --- screenshots ----------------------------------------------------------------------
+shot() { AW_ANDROID="$tmp/fake-android" AW_ADB="$tmp/fake-adb2" bash "$hooks/screenshot.sh" "$@" 2>/dev/null; }
+png() { printf '\211PNG\r\n\032\n%s' "$1"; }
+# fake android: writes what $tmp/android-writes says (png | warning | nothing).
+cat > "$tmp/fake-android" <<EOF
+#!/bin/bash
+out="\${4#--output=}"
+case "\$(cat "$tmp/android-writes")" in
+  png) printf '\\211PNG\\r\\n\\032\\nA' > "\$out" ;;
+  warning) printf '[Warning] Multiple displays were found\\n\\211PNG...' > "\$out" ;;
+esac
+echo "Screenshot written to \$out"
+EOF
+# fake adb: dumpsys lists two displays; screencap writes a PNG only with -d of the first.
+cat > "$tmp/fake-adb2" <<EOF
+#!/bin/bash
+case "\$*" in
+  *dumpsys*) printf 'Display 111 (HWC display 0): port=0\\nDisplay 222 (HWC display 1): port=1\\n' ;;
+  *"screencap -p -d 111"*) [ "\$(cat "$tmp/adb-works")" = yes ] && printf '\\211PNG\\r\\n\\032\\nB' ;;
+  *screencap*) printf 'wrong display' ;;
+esac
+exit 0
+EOF
+chmod +x "$tmp/fake-android" "$tmp/fake-adb2"
+sig() { head -c 8 "$1" | od -An -tx1 | tr -d ' \n'; }
+
+echo png > "$tmp/android-writes"; echo yes > "$tmp/adb-works"
+check "screenshot: android capture is a PNG" "$tmp/s1.png" "$(shot emulator-5554 "$tmp/s1.png")"
+check "  ...kept as written by android" A "$(tail -c 1 "$tmp/s1.png")"
+echo warning > "$tmp/android-writes"
+check "screenshot: warning inside → adb on the first display" "$tmp/s2.png (adb screencap, display 111)" "$(shot emulator-5554 "$tmp/s2.png")"
+check "  ...a real PNG" 89504e470d0a1a0a "$(sig "$tmp/s2.png")"
+echo nothing > "$tmp/android-writes"; echo no > "$tmp/adb-works"
+shot emulator-5554 "$tmp/s3.png" >/dev/null
+check "screenshot: nothing works → exit 1" 1 $?
+check "  ...no broken file left" no "$([ -e "$tmp/s3.png" ] && echo yes || echo no)"
+shot emulator-5554 >/dev/null
+check "screenshot: missing file argument → exit 2" 2 $?
 
 echo
 echo "passed: $pass, failed: $fail"

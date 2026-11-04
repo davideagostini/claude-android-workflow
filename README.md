@@ -47,9 +47,9 @@ claude plugin list          # shows the new version
 
 The update applies to sessions started after it: restart the open ones.
 
-The git hooks in each project are copies, so they don't change with the plugin. The next
-`/android-workflow:ticket` in a project notices an outdated copy and offers to update it;
-`/android-workflow:setup` does the same.
+The git hooks in each project are copies, so they don't change with the plugin. If an
+update changes them, the next `/android-workflow:ticket` in a project notices the outdated
+copy and offers to update it; `/android-workflow:setup` does the same.
 
 ## 2. Set up a project (once per project)
 
@@ -133,6 +133,9 @@ other, then the sessions run in parallel.
 
 - **Devices**: each emulator or phone has its own lock. A task takes a free device (a
   physical one first) and the report says which; when every device is busy, Claude asks.
+  It starts an emulator only on your yes, with `android emulator start --headless`, and
+  asks before stopping it. If the `android-cli` skill is installed, device checks follow
+  its journey format.
 - **Work on different parts of the app**: two tasks on the same files conflict at the
   second merge.
 - **Memory**: every worktree runs its own Gradle build. With three at once the machine
@@ -156,8 +159,9 @@ common cases and is not a security boundary. The git hooks block at the git leve
 real barrier is the branch protection on GitHub.
 
 The git hooks are **copies** in the repository's common git dir (shared by every
-worktree, never committed), with the plugin version inside. After a plugin update,
-`/android-workflow:ticket` notices an outdated copy and offers to update it.
+worktree, never committed), with the plugin version inside. After a plugin update that
+changes them, `/android-workflow:ticket` notices the outdated copy and offers to update
+it; an update that doesn't touch them leaves them current.
 
 ## Manage
 
@@ -219,6 +223,7 @@ hooks/git/pre-commit, pre-push    git hooks, installed as copies by setup
 hooks/install-git-hooks.sh        installs, updates or checks the git hooks
 hooks/device-lock.sh              one lock per device: pick, acquire, release, status
 hooks/build-stats.sh              count, median and longest build check, from the log
+hooks/screenshot.sh               a screenshot that is really a PNG (android CLI, else adb)
 tests/run.sh                      tests of all the scripts
 evals/                            evals of /android-workflow:ticket
 .github/workflows/test.yml        CI: tests on Linux and macOS, shellcheck
