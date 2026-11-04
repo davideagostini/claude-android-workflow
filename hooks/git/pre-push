@@ -1,0 +1,18 @@
+#!/bin/bash
+# android-workflow-hook @VERSION@
+# Installed by /android-workflow:setup. A copy: re-run setup to update it.
+# Blocks pushes that update or delete the default branch on the remote.
+# On purpose: git push --no-verify.
+. "$(dirname "$0")/android-workflow-lib.sh" || exit 0
+
+protected=$(aw_default_branches .)
+# stdin: <local ref> <local oid> <remote ref> <remote oid>, one line per ref.
+while read -r _local_ref _local_oid remote_ref _remote_oid; do
+  for branch in $protected; do
+    if [ "$remote_ref" = "refs/heads/$branch" ]; then
+      echo "android-workflow: push blocked, it updates '$branch', the default branch. Push a branch and open a pull request, or use --no-verify on purpose." >&2
+      exit 1
+    fi
+  done
+done
+exit 0

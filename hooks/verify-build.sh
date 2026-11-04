@@ -9,7 +9,8 @@
 # - Fails again with no new edits since the last failure: lets Claude stop,
 #   so a failure it cannot fix never loops.
 #
-# State lives in the worktree's own git dir: every worktree has its own.
+# State and the build log (android-workflow-builds.log) live in the worktree's own git
+# dir: every worktree has its own.
 
 set -u
 . "$(dirname "$0")/lib.sh"
@@ -48,8 +49,13 @@ if [ "$last" = "fail:$fingerprint" ] && printf '%s' "$input" | jq -e '.stop_hook
   exit 0
 fi
 
+start=$(date +%s)
 log=$(./gradlew "$task" --console=plain -q 2>&1)
-if [ $? -eq 0 ]; then
+result=$?
+# One line per build, for the /ticket report: date, task, seconds, result.
+printf '%s\t%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$task" "$(($(date +%s) - start))" \
+  "$([ $result -eq 0 ] && echo ok || echo fail)" >> "$(git rev-parse --git-dir)/android-workflow-builds.log"
+if [ $result -eq 0 ]; then
   echo "ok:$fingerprint" > "$state"
   exit 0
 fi

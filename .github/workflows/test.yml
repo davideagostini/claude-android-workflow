@@ -1,0 +1,21 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Plugin tests
+        run: bash tests/run.sh
+      - name: shellcheck
+        if: runner.os == 'Linux'
+        run: shellcheck --severity=warning hooks/*.sh hooks/git/* tests/run.sh

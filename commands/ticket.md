@@ -21,7 +21,12 @@ works: use it as a one-item `testTasks`, and suggest re-running setup.
 
 In a worktree the file is usually not there (it is local, not tracked): read it from the
 main checkout, `$(git rev-parse --git-common-dir)/../.claude/android-workflow.json`.
-Missing in both → stop and suggest `/android-workflow:setup`. `jira` absent → the project has
+Missing in both → stop and suggest `/android-workflow:setup`.
+
+Check the plugin's git hooks: `bash "${CLAUDE_PLUGIN_ROOT}/hooks/install-git-hooks.sh" .
+--check`. `outdated` → say so and offer to update them (the same command without
+`--check`), and update only on a yes. `missing` → suggest `/android-workflow:setup`, and
+go on. `blocked` → go on: the project manages its own hooks. `jira` absent → the project has
 no Jira: never ask for a key. The project's CLAUDE.md wins over this command wherever
 they disagree (extra checks, naming, architecture rules).
 
@@ -101,16 +106,37 @@ and why.
 
 ### 8. Device check (only if a screen changed)
 
-Run a journey with the Android CLI (`android run "<runTarget>"`, then `android layout`,
-`android screen capture`, `android input`), from a known state (`adb shell pm clear` or
-an explicit logout), and record pass/fail per step. The emulator is shared by every
-worktree: if `adb devices` shows no device, or another check may be running, ask before
-starting one. No `runTarget`, or no UI change → skip and say so.
+No `runTarget`, or no UI change → skip and say so.
+
+Several tasks may run at once, and there may be several devices. Each device has its own
+lock, shared by every project on this machine:
+
+1. `bash "${CLAUDE_PLUGIN_ROOT}/hooks/device-lock.sh" pick` locks a free, ready device
+   and prints its serial: a physical device first, then an emulator. It fails when no
+   device is connected or every one is busy, and says who holds each lock.
+   - Nothing free → tell the user who holds what and ask. You may suggest starting
+     another emulator from `emulator -list-avds`, but start it only on a yes.
+   - A lock reported as "maybe abandoned" is not removed on its own: ask the user.
+2. Use that serial for every command of the journey: `android run --device=<serial>
+   "<runTarget>"`, `android layout --device=<serial>`, `android screen capture
+   --device=<serial>`, `android input --device=<serial>`, and `ANDROID_SERIAL=<serial>`
+   for `adb`.
+3. Start from a known state (`adb shell pm clear` or an explicit logout) and record
+   pass/fail per step.
+4. Always release the lock at the end, also when the journey fails:
+   `bash "${CLAUDE_PLUGIN_ROOT}/hooks/device-lock.sh" release <serial>`.
 
 ### 9. Report and ask for the commit
 
-Report: what changed, the output of step 6, the review findings, the journey result,
-what was not done. Then ask once: **"Commit, push e PR?"** (in the user's language).
+Report: what changed, the output of step 6, the review findings, the journey result and
+the device it ran on, the build checks of this worktree, what was not done.
+
+Build checks: the Stop hook writes one line per compile to
+`$(git rev-parse --git-dir)/android-workflow-builds.log` (date, task, seconds, result).
+Report how many ran, the median and the longest duration. No file → say that no build
+check ran.
+
+Then ask once: **"Commit, push e PR?"** (in the user's language).
 
 On yes:
 
@@ -119,6 +145,10 @@ On yes:
 - `git push -u origin <branch>`.
 - `gh pr create`: body carries `Closes #NN`, the step 6 output and the journey result.
   With Jira, the title starts with the key and the body carries the Jira link.
+- Wait for the project's CI on the pull request: `gh pr checks <number> --watch`, at most
+  20 minutes. Report the result per check. No checks → say the project has no CI on pull
+  requests. A failing check → show it and stop: don't push fixes after the PR without
+  asking.
 
 ### 10. Stop
 
@@ -126,5 +156,7 @@ Give the PR URL and stop. Merge, the Jira transition and the cleanup are the use
 Remind them:
 
 - With Jira: merging does **not** move the ticket.
-- After the merge: delete the branch (local and remote) and the worktree
-  (`git worktree remove .claude/worktrees/<name>`, or "remove" when leaving the session).
+- After the merge, from the main checkout: remove the worktree ("remove" when leaving the
+  session, or `git worktree remove .claude/worktrees/<name>`), then delete the branch:
+  `git branch -D <branch>` and `git push origin --delete <branch>`. "remove" deletes the
+  worktree folder but **not** the branch renamed in step 4 (checked on 2026-11-04).

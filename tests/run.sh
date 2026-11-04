@@ -1,7 +1,7 @@
 #!/bin/bash
-# Tests for the two hooks, without Android: throwaway repositories in a temp folder,
-# fake hook input (JSON), a fake ./gradlew. It never runs a real commit or push
-# through the hooks. Usage: bash tests/run.sh
+# Tests for the plugin's scripts, without Android: the two Claude Code hooks, the git
+# hooks and their installer, the device lock. Throwaway repositories in a temp folder,
+# fake hook input (JSON), a fake ./gradlew, a fake adb. Usage: bash tests/run.sh
 set -u
 
 hooks="$(cd "$(dirname "$0")/../hooks" && pwd)"
@@ -82,6 +82,11 @@ check "push feature" 0 "$(guard "$tmp/onfeature" "git $P -u origin feature")"
 check "push main-fix" 0 "$(guard "$tmp/onfeature" "git $P origin main-fix")"
 check "not git" 0 "$(guard "$tmp/onmain" "echo 'git $C' > notes.txt")"
 check "git status on main" 0 "$(guard "$tmp/onmain" "git status")"
+check "commit --no-verify on feature" 2 "$(guard "$tmp/onfeature" "git $C --no-verify -m x")"
+check "push --no-verify on feature" 2 "$(guard "$tmp/onfeature" "git $P --no-verify origin feature")"
+check "commit -an on feature" 2 "$(guard "$tmp/onfeature" "git $C -an -m x")"
+check "commit -am on feature" 0 "$(guard "$tmp/onfeature" "git $C -am x")"
+check "commit --amend on feature" 0 "$(guard "$tmp/onfeature" "git $C --amend -m x")"
 
 # --- guard: the repository the command acts on ------------------------------------
 check "-C repo-on-main from feature" 2 "$(guard "$tmp/onfeature" "git -C $tmp/onmain $C -m x")"
@@ -143,6 +148,10 @@ check "fixed: exit 0" 0 "$(stop "$p" true)"
 check "  ...Gradle ran 3 times" 3 "$(runs)"
 check "same changes as last success: no Gradle" 0 "$(stop "$p")"
 check "  ...still 3" 3 "$(runs)"
+buildlog="$(g -C "$p" rev-parse --path-format=absolute --git-dir)/android-workflow-builds.log"
+check "build log: one line per build" 8 "$(wc -l < "$buildlog" | tr -d ' ')"
+check "build log: task and result" ":app:compileDebugKotlin ok" "$(tail -1 "$buildlog" | cut -f2,4 | tr '\t' ' ')"
+check "build log: seconds are a number" yes "$(tail -1 "$buildlog" | cut -f3 | grep -Eq '^[0-9]+$' && echo yes)"
 
 echo '{"compileTask": ":app:compileDebugKotlin", "verifyBuildHook": false}' > "$p/.claude/android-workflow.json"
 echo "BROKEN" > "$p/src/A.kt"
@@ -156,6 +165,108 @@ g -C "$p" commit -q -m base
 g -C "$p" worktree add -q -b wt "$tmp/wt"
 echo "BROKEN" > "$tmp/wt/src/B.kt"
 check "worktree reads project data from main checkout" 2 "$(stop "$tmp/wt")"
+
+# --- git hooks and their installer -------------------------------------------------
+install() { bash "$hooks/install-git-hooks.sh" "$@" 2>&1; }
+version=$(jq -r .version "$hooks/../.claude-plugin/plugin.json")
+h="$tmp/hk"
+repo "$h" master
+g init -q --bare "$tmp/hk-remote.git"
+g -C "$h" remote set-url origin "$tmp/hk-remote.git"
+
+mkdir -p "$tmp/not-a-repo"
+check "installer: not a repo, git's reason shown" yes "$(install "$tmp/not-a-repo" --check | grep -q '^blocked git failed in .*not a git repository' && echo yes)"
+check "installer --check: missing" missing "$(install "$h" --check)"
+install "$h" >/dev/null
+check "installer --check: current" "current $version" "$(install "$h" --check)"
+g -C "$h" commit -q --allow-empty -m x 2>/dev/null
+check "pre-commit: master blocked" 1 $?
+g -C "$h" commit -q --allow-empty --no-verify -m x
+check "pre-commit: --no-verify on purpose" 0 $?
+g -C "$h" switch -q -c feature
+g -C "$h" commit -q --allow-empty -m x
+check "pre-commit: feature allowed" 0 $?
+g -C "$h" push -q origin feature 2>/dev/null
+check "pre-push: feature allowed" 0 $?
+g -C "$h" push -q origin feature:master 2>/dev/null
+check "pre-push: feature:master blocked" 1 $?
+g -C "$h" push -q origin feature:refs/heads/main 2>/dev/null
+check "pre-push: to main blocked" 1 $?
+g -C "$h" push -q origin feature:release 2>/dev/null
+check "pre-push: feature:release allowed" 0 $?
+
+# origin/HEAD decides, and a worktree shares the hooks.
+g -C "$h" update-ref refs/remotes/origin/develop HEAD
+g -C "$h" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/develop
+g -C "$h" worktree add -q -b develop "$tmp/hk-wt"
+g -C "$tmp/hk-wt" commit -q --allow-empty -m x 2>/dev/null
+check "pre-commit in a worktree: develop (origin/HEAD) blocked" 1 $?
+g -C "$h" switch -q master
+g -C "$h" commit -q --allow-empty -m x
+check "pre-commit: master allowed once origin/HEAD is develop" 0 $?
+
+# Outdated copy, foreign hook, core.hooksPath.
+hookdir="$(g -C "$h" rev-parse --path-format=absolute --git-common-dir)/hooks"
+sed -i.bak "s/^# android-workflow-hook .*/# android-workflow-hook 0.0.1/" "$hookdir/pre-push" && rm "$hookdir/pre-push.bak"
+check "installer --check: outdated" "outdated 0.0.1" "$(install "$h" --check)"
+install "$h" >/dev/null
+check "installer: update" "current $version" "$(install "$h" --check)"
+
+f="$tmp/foreign"
+repo "$f" feature
+printf '#!/bin/sh\necho mine\n' > "$f/.git/hooks/pre-commit"
+install "$f" >/dev/null
+check "installer: foreign hook, exit 3" 3 $?
+check "  ...foreign hook untouched" "echo mine" "$(tail -1 "$f/.git/hooks/pre-commit")"
+check "  ...no pre-push written" no "$([ -e "$f/.git/hooks/pre-push" ] && echo yes || echo no)"
+
+hp="$tmp/hookspath"
+repo "$hp" feature
+g -C "$hp" config core.hooksPath .husky
+install "$hp" >/dev/null
+check "installer: core.hooksPath set, exit 3" 3 $?
+check "  ...nothing written" no "$([ -e "$hp/.git/hooks/pre-commit" ] && echo yes || echo no)"
+
+# --- device lock --------------------------------------------------------------------
+lock() { AW_LOCK_DIR="$tmp/locks" AW_ADB="$tmp/fake-adb" AW_LOCK_HOLDER="$1" bash "$hooks/device-lock.sh" "${@:2}" 2>/dev/null; }
+cat > "$tmp/fake-adb" <<'EOF'
+#!/bin/bash
+printf 'List of devices attached\n'
+cat "$(dirname "$0")/devices" 2>/dev/null
+EOF
+chmod +x "$tmp/fake-adb"
+
+lock h1 acquire emulator-5554
+check "lock: acquire" 0 $?
+lock h2 acquire emulator-5554
+check "lock: same device, other task busy" 1 $?
+lock h1 acquire emulator-5554
+check "lock: same task again" 0 $?
+lock h2 acquire emulator-5556
+check "lock: other device free" 0 $?
+lock h2 release emulator-5554
+check "lock: release by another task refused" 1 $?
+lock h1 release emulator-5554
+check "lock: release by holder" 0 $?
+lock h2 acquire emulator-5554
+check "lock: free again after release" 0 $?
+echo 0 > "$tmp/locks/emulator-5556.lock/since"
+check "lock: old lock reported" yes "$(lock h3 status | grep -q 'emulator-5556: .*maybe abandoned' && echo yes)"
+check "lock: old lock not removed" yes "$([ -d "$tmp/locks/emulator-5556.lock" ] && echo yes)"
+lock h3 release emulator-5556 --force
+check "lock: --force release" 0 $?
+lock h2 release emulator-5554
+
+printf 'emulator-5554\tdevice\n37221FDJH00ABJ\tdevice\nemulator-5556\toffline\n' > "$tmp/devices"
+check "pick: physical device first" 37221FDJH00ABJ "$(lock p1 pick)"
+check "pick: then a free emulator" emulator-5554 "$(lock p2 pick)"
+lock p3 pick >/dev/null
+check "pick: all busy (offline ignored)" 1 $?
+lock p1 release 37221FDJH00ABJ
+check "pick: freed device picked again" 37221FDJH00ABJ "$(lock p3 pick)"
+: > "$tmp/devices"
+lock p4 pick >/dev/null
+check "pick: no device connected" 1 $?
 
 echo
 echo "passed: $pass, failed: $fail"
