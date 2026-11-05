@@ -16,12 +16,16 @@ do not stop to ask unless a step cannot be done.
 
 Read `.claude/android-workflow.json` first. Its keys are described in the table of
 `/android-workflow:setup` (step 2); this command uses `compileTask`, `testTasks`,
-`checkTasks`, `runTarget` and `jira`. An old file with `testTask` (a single string) still
+`checkTasks`, `gradleArgs`, `runTarget` and `jira`. An old file with `testTask` (a single string) still
 works: use it as a one-item `testTasks`, and suggest re-running setup.
 
 In a worktree the file is usually not there (it is local, not tracked): read it from the
 main checkout, `$(git rev-parse --git-common-dir)/../.claude/android-workflow.json`.
-Missing in both → stop and suggest `/android-workflow:setup`.
+Missing in both → stop and suggest `/android-workflow:setup`. If this session is in a
+worktree (`git rev-parse --path-format=absolute --git-dir` differs from
+`--git-common-dir`), add that setup can't run from here: it must run from the main
+checkout (print its path, the parent folder of the common git dir), in a session started
+there without `-w`.
 
 Check the plugin's git hooks: `bash "${CLAUDE_PLUGIN_ROOT}/hooks/install-git-hooks.sh" .
 --check`. `outdated` → say so and offer to update them (the same command without
@@ -96,6 +100,7 @@ resources or build files changed, and sends the errors back. Fix them; don't wor
 Run `./gradlew <compileTask>`, then every task in `testTasks` and `checkTasks` in one
 command (`./gradlew <task> <task> ...`, with `--continue` so that one failure doesn't
 hide the others), plus anything the project's CLAUDE.md adds to its definition of done.
+Both commands add `gradleArgs` after the tasks, each item as one quoted argument.
 Keep the output for the report.
 
 Time both commands yourself (`start=$(date +%s)` before, `$(($(date +%s) - start))`

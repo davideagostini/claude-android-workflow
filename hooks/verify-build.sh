@@ -3,6 +3,7 @@
 #
 # - Project without .claude/android-workflow.json, without compileTask, or with
 #   "verifyBuildHook": false: does nothing.
+# - Runs ./gradlew <compileTask> <gradleArgs...> --console=plain -q.
 # - No changed source or build file (see `watched` below): exits at once, no Gradle.
 # - Same changes as the last successful compile: skipped.
 # - Compile fails: exit 2, the errors go back to Claude, which keeps working.
@@ -50,8 +51,23 @@ if [ "$last" = "fail:$fingerprint" ] && printf '%s' "$input" | jq -e '.stop_hook
   exit 0
 fi
 
+# "gradleArgs": extra arguments, one string each, after the task. A while loop, not
+# mapfile: macOS ships bash 3.2.
+args=()
+if jq -e 'has("gradleArgs")' "$config" >/dev/null 2>&1; then
+  if ! jq -e '.gradleArgs | type == "array" and all(type == "string")' "$config" >/dev/null 2>&1; then
+    echo "fail:$fingerprint" > "$state"
+    echo "Build check not run: \"gradleArgs\" in $config must be a list of strings. Tell the user." >&2
+    exit 2
+  fi
+  while IFS= read -r arg; do
+    args+=("$arg")
+  done < <(jq -r '.gradleArgs[]' "$config")
+fi
+
 start=$(date +%s)
-log=$(./gradlew "$task" --console=plain -q 2>&1)
+# ${args[@]+...}: with set -u, bash 3.2 calls an empty array unbound.
+log=$(./gradlew "$task" ${args[@]+"${args[@]}"} --console=plain -q 2>&1)
 result=$?
 # One line per build: date, branch, task, seconds, result.
 branch=$(git branch --show-current)
