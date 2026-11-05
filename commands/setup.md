@@ -13,6 +13,12 @@ pushed and is shared by every worktree of the repository.
 
 ## 1. Check the project
 
+- **Not from a worktree.** Compare `git rev-parse --path-format=absolute --git-dir` with
+  `git rev-parse --path-format=absolute --git-common-dir`. If they differ, this session
+  is in a worktree (for example one started with `claude -w`): it can't write into the
+  main checkout, where the setup's files go. Stop before reading or proposing anything,
+  and tell the user to run `/android-workflow:setup` from the main checkout, the parent
+  folder of the common git dir (print its path), in a session started there without `-w`.
 - It is a git repository with `./gradlew` at the root. Otherwise stop.
 - Read what already exists: `.claude/android-workflow.json`, `.worktreeinclude`,
   `.gitignore`, `.git/info/exclude`, `.claude/settings.json`, `.claude/commands/`,
@@ -30,19 +36,21 @@ pushed and is shared by every worktree of the repository.
 
 This table is the reference for the file's keys: `/android-workflow:ticket`, the hooks
 and the README point here. Propose values, read from the build files, and let the user
-correct them:
+correct them. Settle `gradleArgs` first: every Gradle command below uses it.
 
 | Key | How to find it |
 |---|---|
+| `gradleArgs` | Optional list of strings, one per argument, added after the tasks on every Gradle call the plugin makes (Stop hook, `/android-workflow:ticket` Verify, the checks of this setup). Example: `["-Dorg.gradle.java.home=/Applications/Android Studio.app/Contents/jbr/Contents/Home"]`. Look for what the project's CLAUDE.md says to always pass to Gradle; omit otherwise. The file is local, so a path that only exists on this machine is fine. |
 | `compileTask` | `:app:compile<Variant>Kotlin` for the reference variant. With product flavors, ask which flavor is the reference (the project's CLAUDE.md may say). |
-| `testTasks` | A list: one unit test task per module that has `src/test`, for the reference variant. The name depends on the module: `:app:test<Variant>UnitTest` for a module with flavors, `:feature:x:testDebugUnitTest` for a library without flavors. Check each one with `./gradlew <task> --dry-run`. |
+| `testTasks` | A list: one unit test task per module that has `src/test`, for the reference variant. The name depends on the module: `:app:test<Variant>UnitTest` for a module with flavors, `:feature:x:testDebugUnitTest` for a library without flavors. Check each one with `./gradlew <task> <gradleArgs> --dry-run`. |
 | `checkTasks` | Optional list, run by `/android-workflow:ticket` at Verify (never by the Stop hook). Look in the build files for ktlint (`ktlintCheck`), detekt (`detekt`), spotless (`spotlessCheck`) and propose the tasks found. Android lint (`:app:lint<Variant>`) only if the user wants it: say that it is slow. |
 | `runTarget` | `app@<variant>` for `android run`; omit if there is no app module |
 | `defaultBranch` | Only if `origin/HEAD` is missing and the user doesn't want to set it (step 4). Omit otherwise. |
 | `jira` | `{ "projectKey": "...", "baseUrl": "https://....atlassian.net" }` — only if the project uses Jira. Look for keys in recent commit subjects and branch names, then ask. |
 | `verifyBuildHook` | `false` only if the project already has its own committed build hook (step 1); omit otherwise |
 
-Verify `compileTask` exists: `./gradlew <compileTask> --dry-run`.
+Verify `compileTask` exists: `./gradlew <compileTask> <gradleArgs> --dry-run`. Here and
+below, `<gradleArgs>` means each item of the list as one quoted argument, or nothing.
 
 An existing file with `testTask` (a single string, the old format): propose replacing it
 with `testTasks`.
@@ -127,7 +135,12 @@ CLAUDE.md is usually tracked: say so, and add the line only if the user agrees.
 - `git check-ignore -v .claude/worktrees/x .claude/android-workflow.json` → both ignored.
 - `git symbolic-ref refs/remotes/origin/HEAD`, or `defaultBranch` → the default branch is known.
 - `install-git-hooks.sh . --check` → `current`, or the reason it is `blocked`.
-- `./gradlew <compileTask>` → report the result.
+- `./gradlew <compileTask> <gradleArgs> --console=plain -q`, exactly as the Stop hook
+  runs it: no flag that isn't in `gradleArgs` (even if the project's CLAUDE.md says to
+  add it), no extra environment variables. If it fails, the setup is not done: report
+  the error and say that the Stop hook would fail the same way on every turn that
+  touches code. Point to `gradleArgs`, or to the machine's Gradle config, and don't go
+  on to the next point.
 - Tell the user how to start: `claude -w <name>`, then `/android-workflow:ticket ...`.
 
 ## 8. Report

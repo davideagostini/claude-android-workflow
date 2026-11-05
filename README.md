@@ -81,6 +81,7 @@ Example `.claude/android-workflow.json`:
   "testTasks": [":app:testBlueDebugUnitTest", ":feature:home:testDebugUnitTest"],
   "checkTasks": ["ktlintCheck"],
   "runTarget": "app@blueDebug",
+  "gradleArgs": ["-Dorg.gradle.java.home=/Applications/Android Studio.app/Contents/jbr/Contents/Home"],
   "jira": { "projectKey": "ABC", "baseUrl": "https://example.atlassian.net" }
 }
 ```
@@ -148,7 +149,7 @@ other, then the sessions run in parallel.
 | When | What |
 |---|---|
 | You create a worktree with `claude -w` | The files in `.worktreeinclude` are copied |
-| Claude finishes a reply and has touched `.kt`, `.java`, `.xml` or build files (`.kts`, `.gradle`, `.toml`, `gradle.properties`) | It compiles `compileTask`. If there are errors, Claude must fix them before stopping. If it can't, on the second attempt with no new edits it is allowed to stop (no endless loop). Code that already compiled is not compiled again. |
+| Claude finishes a reply and has touched `.kt`, `.java`, `.xml` or build files (`.kts`, `.gradle`, `.toml`, `gradle.properties`) | It compiles `compileTask`, with the arguments in `gradleArgs` if set. If there are errors, Claude must fix them before stopping. If it can't, on the second attempt with no new edits it is allowed to stop (no endless loop). Code that already compiled is not compiled again. |
 | Claude tries `git commit` or `git push` on the default branch, or `--no-verify` | Blocked. The default branch is `origin/HEAD`; if missing, `defaultBranch` in the project data; if that is missing too, both `main` and `master`. It applies to the repository the command acts on (`git -C <dir>`, `cd <dir> && ...`), not only to the session's folder. |
 | Anyone commits on the default branch, or pushes to it (git hooks, if installed) | Blocked by git, whoever runs the command: Claude, a `!` command, you. `--no-verify` skips it on purpose. |
 | A build check runs | One line in `.git/android-workflow-builds.log` of the project (date, branch, task, seconds, result), shared by every worktree, so it survives "remove". `/ticket` reports the branch's checks and times its own Verify step; `/android-workflow:build-stats` shows the numbers any time. |

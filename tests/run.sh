@@ -106,8 +106,9 @@ p="$tmp/android"
 repo "$p" feature
 cat > "$p/gradlew" <<'EOF'
 #!/bin/bash
-# Fake Gradle: fails when a watched file contains BROKEN, counts its runs.
-echo run >> "$(dirname "$0")/.gradle-runs"
+# Fake Gradle: fails when a watched file contains BROKEN, counts its runs. One line per
+# run, its arguments joined by "|".
+(IFS='|'; echo "$*") >> "$(dirname "$0")/.gradle-runs"
 if grep -rqs BROKEN --include='*.kt' --include='*.xml' --include='*.toml' "$(dirname "$0")/src"; then
   echo "e: src/A.kt:1:1 Unresolved reference 'BROKEN'."
   exit 1
@@ -158,6 +159,32 @@ check "build log: seconds are a number" yes "$(tail -1 "$buildlog" | cut -f4 | g
 echo '{"compileTask": ":app:compileDebugKotlin", "verifyBuildHook": false}' > "$p/.claude/android-workflow.json"
 echo "BROKEN" > "$p/src/A.kt"
 check "verifyBuildHook false: exit 0" 0 "$(stop "$p")"
+
+# gradleArgs: after the task, one argument each, spaces kept.
+echo '{"compileTask": ":app:compileDebugKotlin"}' > "$p/.claude/android-workflow.json"
+rm -f "$p/.gradle-runs"
+echo "no args" > "$p/src/A.kt"
+check "no gradleArgs: exit 0" 0 "$(stop "$p")"
+check "  ...only task and plain quiet" ":app:compileDebugKotlin|--console=plain|-q" "$(tail -1 "$p/.gradle-runs")"
+echo '{"compileTask": ":app:compileDebugKotlin", "gradleArgs": ["-Dorg.gradle.java.home=/A B/Home", "--offline"]}' \
+  > "$p/.claude/android-workflow.json"
+echo "with args" > "$p/src/A.kt"
+check "gradleArgs: exit 0" 0 "$(stop "$p")"
+check "  ...passed in order, spaces kept" \
+  ":app:compileDebugKotlin|-Dorg.gradle.java.home=/A B/Home|--offline|--console=plain|-q" "$(tail -1 "$p/.gradle-runs")"
+echo '{"compileTask": ":app:compileDebugKotlin", "gradleArgs": []}' > "$p/.claude/android-workflow.json"
+echo "empty args" > "$p/src/A.kt"
+check "gradleArgs empty list: exit 0" 0 "$(stop "$p")"
+check "  ...only task and plain quiet" ":app:compileDebugKotlin|--console=plain|-q" "$(tail -1 "$p/.gradle-runs")"
+echo '{"compileTask": ":app:compileDebugKotlin", "gradleArgs": "--offline"}' > "$p/.claude/android-workflow.json"
+echo "string args" > "$p/src/A.kt"
+runs_before=$(runs)
+check "gradleArgs as a string: exit 2" 2 "$(stop "$p")"
+check "  ...no Gradle" "$runs_before" "$(runs)"
+check "  ...same again, stop_hook_active: lets Claude stop" 0 "$(stop "$p" true)"
+echo '{"compileTask": ":app:compileDebugKotlin", "gradleArgs": ["--offline", 1]}' > "$p/.claude/android-workflow.json"
+echo "number arg" > "$p/src/A.kt"
+check "gradleArgs with a number: exit 2" 2 "$(stop "$p")"
 
 # Project data only in the main checkout, hook run in a worktree.
 echo '{"compileTask": ":app:compileDebugKotlin"}' > "$p/.claude/android-workflow.json"
